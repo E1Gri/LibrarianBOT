@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 import os
 
 # Импорт роутеров
-from handlers.start import router as start_router
-from handlers.book_handlers import router as book_router
+from Front.handlers.start import router as start_router
+from Front.handlers.book_handlers import router as book_router
 
 # Настройка логирования
 logging.basicConfig(
@@ -21,7 +21,7 @@ async def main():
     
     # Загрузка токена из .env или config.env
     load_dotenv()
-    load_dotenv('config.env')  # На случай если токен в config.env
+    load_dotenv('Front/config.env')  # На случай если токен в config.env
     
     BOT_TOKEN = os.getenv("BOT_TOKEN")
     

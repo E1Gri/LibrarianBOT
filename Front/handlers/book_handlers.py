@@ -1,8 +1,11 @@
 from aiogram import types, Router, F
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.types.input_file import FSInputFile
-from test_books import books
-from keyboards.main_menu import main_menu
+from Front.test_books import books
+from Front.keyboards.main_menu import main_menu
+from Back.ml_object import ml
+from Data.book_for_tgBot import Book
+from Back.ml import get_list_reviews, add_user_to_db
 
 
 router = Router()
@@ -10,7 +13,22 @@ router = Router()
 
 # --- ХРАНЕНИЕ СОСТОЯНИЙ ПОЛЬЗОВАТЕЛЕЙ ---
 user_feedback = {}  # {user_id: {"likes": [], "dislikes": [], "bookmarks": [], "index": 0, "current_category": None, "history": [], "search_results": [], "source": None, "current_index_in_list": None}}
+def init_user(user_id):
 
+    add_user_to_db(user_id)
+
+    user_feedback[user_id] = {
+        "likes": [],
+        "dislikes": [],
+        "bookmarks": [],
+        "index": 0,
+        "current_category": None,
+        "history": [],
+        "search_results": [],
+        "source": None,
+        "current_index_in_list": None,
+        "recommendations": []#ml.recommendations(user_id)
+    }
 
 # --- КЛАВИАТУРЫ ---
 def book_keyboard() -> InlineKeyboardMarkup:
@@ -56,6 +74,7 @@ def ratings_menu_all() -> InlineKeyboardMarkup:
     ])
 
 
+
 def ratings_menu_category() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -72,12 +91,62 @@ def search_menu() -> InlineKeyboardMarkup:
     ])
 
 
+# --- ПОИСК ПО ОПИСАНИЮ ---
+async def llm_send_book(message: types.Message, user_id: int, edit=False):
+    """
+    Отправка книги, найденной по описанию через ml.GenreCossim.
+    Сохраняет список ID книг в recommendations.
+    """
+    text = message.text.strip()
+    books = ml.GenreCossim(text)  # возвращает список ID книг
+    if not books:
+        await message.answer("❌ По вашему описанию ничего не найдено.")
+        return
+
+    user_feedback[user_id]["recommendations"] = books
+    user_feedback[user_id]["index"] = 0  # начинаем с первой книги
+
+    book_id = books[0]
+    book = Book.byID(book_id)
+    photo = book.pic
+    caption = f"<b>{book.name}</b>\nАвтор: {book.author}\n\n{book.discription[:500]}"
+
+    if edit:
+        await message.edit_media(
+            media=types.InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"),
+            reply_markup=book_keyboard()
+        )
+    else:
+        await message.answer_photo(
+            photo=photo, caption=caption, parse_mode="HTML", reply_markup=book_keyboard()
+        )
+
+
+# --- CALLBACK HANDLER ДЛЯ ПОИСКА ПО ОПИСАНИЮ ---
+@router.callback_query(lambda c: c.data == "by_description")
+async def by_description_handler(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    if user_id not in user_feedback:
+        init_user(user_id)
+
+    user_feedback[user_id]["source"] = "description_search"
+    user_feedback[user_id]["index"] = 0
+
+    await callback_query.message.answer(
+        "🔍 Введите описание книги, чтобы найти её:"
+    )
+    await callback_query.answer()
+
+
 # --- ПОДБОРКА ---
 async def send_book(message: types.Message, user_id: int, edit=False):
+    books = user_feedback[user_id]["recommendations"]
     index = user_feedback[user_id]["index"]
-    book = books[index]
-    photo = FSInputFile(book["cover"])
-    caption = f"<b>{book['title']}</b>\nАвтор: {book['author']}\n\n{book['description']}"
+    book_id = books[index]
+
+    book = Book.byID(book_id)
+    photo = book.pic
+    caption = f"<b>{book.discription[:500]}</b>\n\n\n{book.name}\nАвтор:{book.author}"
     if edit:
         await message.edit_media(
             media=types.InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"),
@@ -90,46 +159,42 @@ async def send_book(message: types.Message, user_id: int, edit=False):
 @router.callback_query(lambda c: c.data == "selection")
 async def selection_handler(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
-    user_feedback.setdefault(user_id, {"likes": [], "dislikes": [], "bookmarks": [],
-                                       "index": 0, "current_category": None, "history": [],
-                                       "search_results": [], "source": None, "current_index_in_list": None})
+    if user_id not in user_feedback:
+        init_user(user_id)
+
+    user_feedback[user_id]["index"] = 0
+    user_feedback[user_id]["recommendations"] = ml.recommendations(user_id)
     await send_book(callback_query.message, user_id)
     await callback_query.answer()
 
 
 # --- ОБЩАЯ ОЦЕНКА ---
-async def give_feedback(data, book, feedback_type):
+async def give_feedback(user_id, book: Book, feedback_type):
     # Ограничение: лайк и дизлайк одновременно нельзя
     if feedback_type == "like":
-        if book in data["dislikes"]:
-            data["dislikes"].remove(book)
-        if book not in data["likes"]:
-            data["likes"].append(book)
+        book.review(user_id, 1)
     elif feedback_type == "dislike":
-        if book in data["likes"]:
-            data["likes"].remove(book)
-        if book not in data["dislikes"]:
-            data["dislikes"].append(book)
+        book.review(user_id, 2)
     elif feedback_type == "bookmark":
-        if book not in data["bookmarks"]:
-            data["bookmarks"].append(book)
+        book.review(user_id, 3)
 
 
 @router.callback_query(lambda c: c.data in ["like", "dislike", "bookmark"])
 async def feedback_handler(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     index = user_feedback[user_id]["index"]
-    book = books[index]
+    books = user_feedback[user_id]["recommendations"]
+    book = Book.byID(books[index])
     data = user_feedback[user_id]
 
     if callback_query.data == "like":
-        await give_feedback(data, book, "like")
+        await give_feedback(user_id, book, "like")
         msg = "❤️ Лайк"
     elif callback_query.data == "dislike":
-        await give_feedback(data, book, "dislike")
+        await give_feedback(user_id, book, "dislike")
         msg = "💔 Дизлайк"
     else:
-        await give_feedback(data, book, "bookmark")
+        await give_feedback(user_id, book, "bookmark")
         msg = "🔖 В закладки"
 
     await callback_query.answer(msg, show_alert=False)
@@ -144,9 +209,9 @@ async def feedback_handler(callback_query: types.CallbackQuery):
 async def nav_handler(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     if callback_query.data == "next":
-        user_feedback[user_id]["index"] = (user_feedback[user_id]["index"] + 1) % len(books)
+        user_feedback[user_id]["index"] = (user_feedback[user_id]["index"] + 1) % len(user_feedback[user_id]["recommendations"])
     else:
-        user_feedback[user_id]["index"] = (user_feedback[user_id]["index"] - 1) % len(books)
+        user_feedback[user_id]["index"] = (user_feedback[user_id]["index"] - 1) % len(user_feedback[user_id]["recommendations"])
     await send_book(callback_query.message, user_id, edit=True)
     await callback_query.answer()
 
@@ -167,17 +232,17 @@ async def my_ratings_handler(callback_query: types.CallbackQuery):
     user_feedback[user_id]["history"] = []
     data = user_feedback[user_id]
 
-    likes = data["likes"]
-    dislikes = data["dislikes"]
-    bookmarks = data["bookmarks"]
+    likes = get_list_reviews(user_id, 1)
+    dislikes = get_list_reviews(user_id, 2)
+    bookmarks = get_list_reviews(user_id, 3)
 
     all_rated = []
-    for b in likes:
-        all_rated.append(f"❤️ {b['title']}")
-    for b in dislikes:
-        all_rated.append(f"💔 {b['title']}")
-    for b in bookmarks:
-        all_rated.append(f"🔖 {b['title']}")
+    for id in likes:
+        all_rated.append(f"❤️ {Book.byID(id).name}")
+    for id in dislikes:
+        all_rated.append(f"💔 {Book.byID(id).name}")
+    for id in bookmarks:
+        all_rated.append(f"🔖 {Book.byID(id).name}")
 
     if not all_rated:
         text = "😶 Вы ещё не оценили ни одной книги."
@@ -192,7 +257,13 @@ async def my_ratings_handler(callback_query: types.CallbackQuery):
 @router.callback_query(lambda c: c.data in ["show_likes", "show_dislikes", "show_bookmarks"])
 async def show_category_handler(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
+    if user_id not in user_feedback:
+        init_user(user_id)
+
     data = user_feedback[user_id]
+    user_feedback[user_id]["likes"] = get_list_reviews(user_id, 1)
+    user_feedback[user_id]["dislikes"] = get_list_reviews(user_id, 2)
+    user_feedback[user_id]["bookmarks"] = get_list_reviews(user_id, 3)
     data["current_category"] = callback_query.data.split("_")[1]
     data["history"].append("category_menu")
     data["source"] = "ratings"
@@ -203,7 +274,7 @@ async def show_category_handler(callback_query: types.CallbackQuery):
     if not books_list:
         text = f"{category_name}:\n\nПока нет книг."
     else:
-        text = f"{category_name}:\n\n" + "\n".join(f"{i+1}. {b['title']}" for i, b in enumerate(books_list))
+        text = f"{category_name}:\n\n" + "\n".join(f"{i+1}. {Book.byID(id).name}" for i, id in enumerate(books_list))
         text += "\n\n📖 Введите номер книги, чтобы увидеть карточку."
 
     await callback_query.message.answer(text, parse_mode="HTML", reply_markup=ratings_menu_category())
@@ -214,13 +285,8 @@ async def show_category_handler(callback_query: types.CallbackQuery):
 @router.callback_query(lambda c: c.data == "search_books")
 async def start_search_handler(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
-    user_feedback.setdefault(user_id, {"likes": [], "dislikes": [], "bookmarks": [],
-                                       "index": 0, "current_category": None, "history": [],
-                                       "search_results": [], "source": None, "current_index_in_list": None})
-    user_feedback[user_id]["source"] = "search"
-    user_feedback[user_id]["search_results"] = []
-    user_feedback[user_id]["current_index_in_list"] = None
-    
+    init_user(user_id)
+    user_feedback[user_id]["source"] = "search" 
     await callback_query.message.answer("🔍 Введите часть названия книги для поиска:", reply_markup=search_menu())
     await callback_query.answer()
 
@@ -229,9 +295,12 @@ async def start_search_handler(callback_query: types.CallbackQuery):
 @router.message(lambda message: True)
 async def handle_text(message: types.Message):
     user_id = message.from_user.id
-    data = user_feedback.setdefault(user_id, {"likes": [], "dislikes": [], "bookmarks": [],
-                                              "index": 0, "current_category": None, "history": [],
-                                              "search_results": [], "source": None, "current_index_in_list": None})
+    if user_id not in user_feedback:
+        init_user(user_id)
+    data = user_feedback[user_id]
+    # data = user_feedback.setdefault(user_id, {"likes": [], "dislikes": [], "bookmarks": [],
+    #                                           "index": 0, "current_category": None, "history": [],
+    #                                           "search_results": [], "source": None, "current_index_in_list": None}) #может тут проблема?
 
     text = message.text.strip()
 
@@ -253,10 +322,10 @@ async def handle_text(message: types.Message):
         if has_results:
             idx = int(text) - 1
             if 0 <= idx < len(books_list):
-                book = books_list[idx]
+                id = books_list[idx]
                 data["current_index_in_list"] = idx
-                photo = FSInputFile(book["cover"])
-                caption = f"<b>{book['title']}</b>\nАвтор: {book['author']}\n\n{book['description']}"
+                photo =Book.byID(id).pic
+                caption = f"<b>{Book.byID(id).discription[:500]}</b>\n\n\n{Book.byID(id).name}\nАвтор: {Book.byID(id).author}"
                 await message.answer_photo(photo=photo, caption=caption, parse_mode="HTML", reply_markup=book_keyboard_in_list())
                 return
             else:
@@ -268,12 +337,15 @@ async def handle_text(message: types.Message):
     if data.get("source") == "search":
         # Общий поиск по всем книгам (включая "1984")
         query = text.lower()
-        results = [b for b in books if query in b["title"].lower()]
+        results = ml.search(query)
         data["search_results"] = results
+        data["source"] = "search"
+        data["current_index_in_list"] = None
+
         if not results:
             await message.answer("❌ Ничего не найдено.", reply_markup=search_menu())
             return
-        text_out = "🔍 Найдено:\n\n" + "\n".join(f"{i+1}. {b['title']}" for i, b in enumerate(results))
+        text_out = "🔍 Найдено:\n\n" + "\n".join(f"{i+1}. {Book.byID(id).name}" for i, id in enumerate(results))
         text_out += "\n\nВведите номер книги, чтобы открыть её."
         await message.answer(text_out, reply_markup=search_menu())
     
@@ -282,7 +354,7 @@ async def handle_text(message: types.Message):
         query = text.lower()
         category = data["current_category"]
         all_books = data[category]
-        results = [b for b in all_books if query in b["title"].lower()]
+        results = [b for b in all_books if query in b.name.lower()]
         
         category_name = {"likes": "❤️ Лайки", "dislikes": "💔 Дизлайки", "bookmarks": "🔖 Закладки"}[category]
         
@@ -290,11 +362,16 @@ async def handle_text(message: types.Message):
             await message.answer(f"❌ Ничего не найдено в категории {category_name}.", reply_markup=ratings_menu_category())
             return
         
-        text_out = f"🔍 Найдено в {category_name}:\n\n" + "\n".join(f"{i+1}. {b['title']}" for i, b in enumerate(results))
+        text_out = f"🔍 Найдено в {category_name}:\n\n" + "\n".join(f"{i+1}. {Book.byID(id)}" for i, id in enumerate(results))
         text_out += "\n\nВведите номер книги, чтобы открыть её."
         
         await message.answer(text_out, reply_markup=ratings_menu_category())
 
+    # --- Обработка описания книги ---
+    if data.get("source") == "description_search":
+        await message.answer("⏳ Запрос обрабатывается...")
+        await llm_send_book(message, user_id)
+        return  # чтобы дальше не выполнялись остальные условия
 
 # --- ОБРАБОТЧИКИ КНОПОК НАЗАД ---
 @router.callback_query(lambda c: c.data == "back_from_book")
@@ -311,7 +388,7 @@ async def back_from_book_handler(callback_query: types.CallbackQuery):
             await callback_query.message.answer("❌ Ничего не найдено.", reply_markup=search_menu())
             await callback_query.answer()
             return
-        text = "🔍 Найдено:\n\n" + "\n".join(f"{i+1}. {b['title']}" for i, b in enumerate(results))
+        text = "🔍 Найдено:\n\n" + "\n".join(f"{i+1}. {Book.byID(id).name}" for i, id in enumerate(results))
         text += "\n\nВведите номер книги, чтобы открыть её."
         await callback_query.message.answer(text, reply_markup=search_menu())
     elif source == "ratings":
@@ -321,7 +398,7 @@ async def back_from_book_handler(callback_query: types.CallbackQuery):
         if not books_list:
             text = f"{category_name}:\n\nПока нет книг."
         else:
-            text = f"{category_name}:\n\n" + "\n".join(f"{i+1}. {b['title']}" for i, b in enumerate(books_list))
+            text = f"{category_name}:\n\n" + "\n".join(f"{i+1}. {Book.byID(id).name}" for i, id in enumerate(books_list))
             text += "\n\n📖 Введите номер книги, чтобы увидеть карточку."
         await callback_query.message.answer(text, reply_markup=ratings_menu_category())
     await callback_query.answer()
@@ -336,16 +413,16 @@ async def back_to_all_ratings_handler(callback_query: types.CallbackQuery):
     data["current_category"] = None
     data["current_index_in_list"] = None
     
-    likes = data["likes"]
-    dislikes = data["dislikes"]
-    bookmarks = data["bookmarks"]
+    likes = get_list_reviews(user_id, 1)
+    dislikes = get_list_reviews(user_id, 2)
+    bookmarks = get_list_reviews(user_id, 3)
     all_rated = []
-    for b in likes:
-        all_rated.append(f"❤️ {b['title']}")
-    for b in dislikes:
-        all_rated.append(f"💔 {b['title']}")
-    for b in bookmarks:
-        all_rated.append(f"🔖 {b['title']}")
+    for id in likes:
+        all_rated.append(f"❤️ {Book.byID(id).name}")
+    for id in dislikes:
+        all_rated.append(f"💔 {Book.byID(id).name}")
+    for id in bookmarks:
+        all_rated.append(f"🔖 {Book.byID(id).name}")
     if not all_rated:
         text = "😶 Вы ещё не оценили ни одной книги."
     else:
@@ -400,16 +477,16 @@ async def feedback_in_list_handler(callback_query: types.CallbackQuery):
         await callback_query.answer("⚠️ Ошибка источника.", show_alert=True)
         return
 
-    book = books_list[idx]
+    book = Book.byID(books_list[idx])
 
     if callback_query.data == "like_no_next":
-        await give_feedback(data, book, "like")
+        await give_feedback(user_id, book, "like")
         msg = "❤️ Лайк"
     elif callback_query.data == "dislike_no_next":
-        await give_feedback(data, book, "dislike")
+        await give_feedback(user_id, book, "dislike")
         msg = "💔 Дизлайк"
     else:
-        await give_feedback(data, book, "bookmark")
+        await give_feedback(user_id, book, "bookmark")
         msg = "🔖 В закладки"
 
     await callback_query.answer(msg, show_alert=False)

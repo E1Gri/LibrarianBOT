@@ -2,16 +2,32 @@
 
 import pandas as pd
 import sqlite3
+import csv
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from book_for_tgBot import Book
-from model import LLM
+from Data.book_for_tgBot import Book
+from .model import LLM
 
+def add_user_to_db(userId):
+    db = sqlite3.connect("Data/DataBase.db")
+    cursor = db.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON;")
+
+    cursor.execute("SELECT id FROM users WHERE id = ?", (userId,))
+    exists = cursor.fetchone()
+
+    if exists:
+        db.close()
+    else:
+        cursor.execute("INSERT INTO users (id) VALUES (?)", (userId,))
+        db.commit()
+        db.close()
+    
 def get_list_reviews(userId, review: int):
         """
         return list of books ids or None
         """
-        db = sqlite3.connect("DataBase.db")
+        db = sqlite3.connect("Data/DataBase.db")
         cursor = db.cursor()
         cursor.execute("PRAGMA foreign_keys = ON;")
 
@@ -21,23 +37,45 @@ def get_list_reviews(userId, review: int):
         db.close()
 
         return [r[0] for r in b]
-        
+
+# def get_user_id_from_db(tag: str, file_path = "Data/DataBase.db"):
+#     db = sqlite3.connect(file_path)
+#     cursor = db.cursor()
+
+#     cursor.execute("SELECT * FROM users WHERE tgTag = ?", (tag,))
+#     b = cursor.fetchone()
+
+#     if b != None: 
+#         db.close()
+#         return b[0]
+#     else: 
+#         cursor.execute("INSERT INTO users (tgTag) VALUES (?)", (tag,))
+
+#         cursor.execute("SELECT * FROM users WHERE tgTag = ?", (tag,))
+#         b = cursor.fetchone()
+
+#         db.commit()
+#         db.close()
+
+#         return int(b[0])       
 
 class ML:
      
     def __init__(self):
-        db = sqlite3.connect("DataBase.db")
+
+
+        db = sqlite3.connect("Data/DataBase.db")
 
         cursor = db.cursor()
 
         cursor.execute("PRAGMA foreign_keys = ON;")
 
-        cursor.executescript(open("creation.sql", 'r').read())
+        cursor.executescript(open("Data/creation.sql", 'r').read())
 
         if cursor.execute("SELECT * FROM books WHERE id = ?", (1,)).fetchone() == None:
 
             tuples = []
-            with open("Combined_clean_tables.csv", 'r', encoding="utf-8") as file:
+            with open("Data/Combined_clean_tables.csv", 'r', encoding="utf-8") as file:
                 reader = csv.DictReader(file, delimiter=';')
                 for row in reader:
                     tuples.append(
@@ -53,9 +91,12 @@ class ML:
                     )
 
             cursor.executemany("INSERT INTO books (name, author, year, genre, discription, picPath, score) VALUES (?, ?, ?, ?, ?, ?, ?)", tuples)
+            db.commit()
             print("Books have been added to db from csv")
 
         self.df = pd.read_sql_query("SELECT * FROM books", db)
+
+        self.llm = LLM()
         
         def prepare_text(row):
             author = row['author'] or ""
@@ -65,7 +106,7 @@ class ML:
         
         self.df['text'] = self.df.apply(prepare_text, axis=1)
 
-        with open('stop-ru.txt') as f:
+        with open('Back/stop-ru.txt') as f:
                 sw = f.read().splitlines()
 
         self.vectorizer = TfidfVectorizer(
@@ -98,11 +139,13 @@ class ML:
             return self.df.iloc[similar_idxs][['name', 'author', 'genre', 'id', 'picPath']]
 
 
-        books = recommend_similar(BookName, top_n=100)
+        books = recommend_similar(BookName, top_n=100)['id'].tolist()
         return books
     
     
-    def GenreCossim(self, Genre: str):
+    def GenreCossim(self, user_input: str):
+
+        Genre = self.llm.describeGenres(user_input)
 
         def recommend_similar(genre, top_n=5):
 
@@ -122,7 +165,7 @@ class ML:
 
 
     def Likes(self, UserId: int):
-        db = sqlite3.connect("DataBase.db")
+        db = sqlite3.connect("Data/DataBase.db")
         cursor = db.cursor()
         cursor.execute("PRAGMA foreign_keys = ON;")
 
@@ -131,17 +174,74 @@ class ML:
 
         db.close()
 
-        likes = []
-        for book in b:
-            likes.append(book[1])
+        likes = get_list_reviews(UserId, 1)
 
         lists = []
 
         for id in likes:
             theBook = Book.byID(id)
-            lists += self.NameCossim(theBook.name)['id'].to_list()
+            lists += self.NameCossim(theBook.name)
 
         return list(set(lists))
+    
+    def recommendations(self, UserId: int, ):
+        """
+        Надо еще будет фичей добавить
+        """
 
+        default_reccomendations = [217, 23099, 2726, 3511, 29786, 23256, 23371, 21, 611, 26906]
 
+        likes = get_list_reviews(UserId, 1)
+        dislikes = get_list_reviews(UserId, 2)
+        saved = get_list_reviews(UserId, 3)
+        seen = get_list_reviews(UserId, 0)
+
+        #Фича 1 Ркекоммендации на основе лайков пользователя
+        booksId = self.Likes(UserId)
+        booksId = list(set(default_reccomendations +  booksId))
+        result = []
+
+        for i in range(len(booksId)):
+            if booksId[i] in dislikes or booksId[i] in saved or booksId[i] in seen or booksId[i] in likes:
+                continue
+            else:
+                result.append(booksId[i])
+                
         
+        return result
+    
+    @staticmethod
+    def search(bookName: str, file_path="Data/DataBase.db", limit=10):
+        db = sqlite3.connect(file_path)
+        cursor = db.cursor()
+
+        cursor.execute("SELECT id, name FROM books")
+        rows = cursor.fetchall()
+        db.close()
+
+        query = bookName.strip().lower()
+        books_found = []
+
+        for row in rows:
+            book_id, book_name = row
+            if query in book_name.strip().lower():
+                books_found.append(book_id)
+                if len(books_found) >= limit:
+                    break
+
+        return books_found
+    
+    def llm_recommendations(self, UserId, UserInput):
+        dislikes = get_list_reviews(UserId, 2)
+        saved = get_list_reviews(UserId, 3)
+        seen = get_list_reviews(UserId, 0)
+
+        books = self.GenreCossim(UserInput)
+
+        for i in books:
+            if i in dislikes or i in saved or i in seen:
+                books.pop(i)
+
+        return books
+    
+

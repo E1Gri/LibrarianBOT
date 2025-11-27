@@ -1,7 +1,7 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import os
-from cleaner import tclean
+from .cleaner import tclean
 
 class LLM:
 
@@ -20,7 +20,7 @@ class LLM:
             model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
                 local_files_only=False,
-                torch_dtype=torch.bfloat16,
+                dtype=torch.bfloat16,
                 device_map="auto" 
             )
             model.save_pretrained(self.local_dir)
@@ -37,14 +37,14 @@ class LLM:
         self.model = AutoModelForCausalLM.from_pretrained(
             self.local_dir,
             local_files_only=False,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
             device_map="auto"
         )
 
     def describeGenres(self, usr_prompt: str):
         
-        with open(genres_path) as f:
-            genres = f.read()
+        # with open(genres_path) as f:
+        #     genres = f.read()
 
         prompt = (
             "Ты библиотекарь и литературный эксперт. На основе списка слов напиши **только 5 жанров книги**, в точности так, как это реально существует. Ответ **должен быть одной строкой**, без скобок, авторов, пояснений, кавычек, запятых или любых других слов. укажи только жанр. Если ты закончил с жанрами, то **просто заполни пространство пробелами** Не повторяй себя, просто остановись"

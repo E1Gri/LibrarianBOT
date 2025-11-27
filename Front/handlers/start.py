@@ -1,6 +1,6 @@
 from aiogram import types, Router
 from aiogram.filters import Command
-from keyboards.main_menu import main_menu
+from Front.keyboards.main_menu import main_menu
 
 
 router = Router()
