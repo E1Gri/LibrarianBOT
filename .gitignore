@@ -1,1 +1,16 @@
+Back/stablelm_local
 stablelm_local
+venv/
+Data/DataBase.db
+covers/
+
+__pycache__/
+Data/__pycache__/
+*.pyc
+
+*.bin
+*.pt
+*.ckpt
+
+.DS_Store
+*.log

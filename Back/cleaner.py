@@ -13,7 +13,7 @@ from nltk.corpus import stopwords
 
 def tclean(text):
     russian_stopwords = []
-    file = open("stop-ru.txt", "r")
+    file = open("Back/stop-ru.txt", "r")
 
     for i in file:
         russian_stopwords.append(i[:-1])
