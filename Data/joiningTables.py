@@ -1,3 +1,11 @@
+"""
+Объединение CSV таблиц ("простое" и "сложное" чтение)
+Удаление дубликатов
+
+(Сохранение уникальных жанров в отдельный файл
+ для дальнейшей работы с LLM) - НЕ АКТУАЛЬНО
+"""
+
 import pandas as pd
 
 file_list = [
@@ -26,16 +34,16 @@ if cleaned_tables:
     combined_table.to_csv(output_file, index=False, sep=';', encoding='utf-8')
     print(f"Объединённая таблица сохранена в: {output_file}")
 
-    for genres_str in combined_table['genres'].dropna():
-        genres_list = [genre.strip() for genre in genres_str.split(',')]
-        all_genres.update(genres_list)
+    # for genres_str in combined_table['genres'].dropna():
+    #     genres_list = [genre.strip() for genre in genres_str.split(',')]
+    #     all_genres.update(genres_list)
 
-    if all_genres:
-        with open('genres.txt', 'w', encoding='utf-8') as f:
-            for genre in sorted(all_genres):
-                f.write(genre + '\n')
-        print(f"Уникальные жанры сохранены в файл genres.txt, всего их: {len(all_genres)}")
-    else:
-        print("Жанры не найдены ни в одном файле")
+    # if all_genres:
+    #     with open('genres.txt', 'w', encoding='utf-8') as f:
+    #         for genre in sorted(all_genres):
+    #             f.write(genre + '\n')
+    #     print(f"Уникальные жанры сохранены в файл genres.txt, всего их: {len(all_genres)}")
+    # else:
+    #     print("Жанры не найдены ни в одном файле")
 else:
     print("Ни один файл не был успешно обработан")

@@ -1,4 +1,16 @@
-import pandas as pd
+"""
+Предназначен для интеграции с тг ботом: 
+ удобный интерфейс для получения и обработки данных о книге
+ 
+Реализован класс Book для работы с книгами: 
+ загрузка данных из базы данных по айди
+ (на ранней стадии из CSV файла по номеру строки 
+ + метод отображения информации о книге (для самопроверки) - НЕ АКТУАЛЬНО)
+Также реализована работа с отзывами пользователей 
+ (поиск, добавление, обновление оценок)
+"""
+
+# import pandas as pd
 import sqlite3
 
 class Book:
@@ -12,47 +24,42 @@ class Book:
         self.url = None
         self.score = None
     
-    def get_from_csv(self, line_number, file_path="Data/Combined_clean_tables.csv"):
-        try:
-            df = pd.read_csv(file_path, sep=';', encoding='utf-8')
-            # row = df.iloc[row_number]
-            if line_number < 1 or line_number > len(df):
-                print(f"Строка {line_number} вне диапазона (1-{len(df)})")
-                return self
+    # def get_from_csv(self, line_number, file_path="Combined_clean_tables.csv"):
+    #     try:
+    #         df = pd.read_csv(file_path, sep=';', encoding='utf-8')
+    #         # row = df.iloc[row_number]
+    #         if line_number < 1 or line_number > len(df):
+    #             print(f"Строка {line_number} вне диапазона (1-{len(df)})")
+    #             return self
                 
-            data_index = line_number - 1
-            line = df.iloc[data_index]
+    #         data_index = line_number - 1
+    #         line = df.iloc[data_index]
             
-            self.name = line.get('name')
-            self.author = line.get('author')
-            self.date = line.get('date')
-            self.discription = line.get('discription')
-            self.genres = line.get('genres')
-            self.pic = line.get('pic')
-            self.url = line.get('url')
-            self.score = line.get('score')
+    #         self.name = line.get('name')
+    #         self.author = line.get('author')
+    #         self.date = line.get('date')
+    #         self.discription = line.get('discription')
+    #         self.genres = line.get('genres')
+    #         self.pic = line.get('pic')
+    #         self.url = line.get('url')
+    #         self.score = line.get('score')
             
-            print(f"Книга '{self.name}' загружена из строки {line_number}")
+    #         print(f"Книга '{self.name}' загружена из строки {line_number}")
             
-        except Exception as e:
-            print(f"Ошибка загрузки: {e}")
+    #     except Exception as e:
+    #         print(f"Ошибка загрузки: {e}")
     
-    def display_info(self):
-        if self.name:
-            print('\n' + f"{self.name} | {self.author} | {self.date}  | Score: {self.score}" + '\n')
-            print(f"Description: {self.discription}" + '\n')
-            print(f"Genres: {self.genres}" + '\n')
-            print(f"pic: {self.pic}" + '\n')
-            if self.url != None: print(f"URL: {self.url}" + '\n')
-        else:
-            print("Книга не загружена")
+    # def display_info(self):
+    #     if self.name:
+    #         print('\n' + f"{self.name} | {self.author} | {self.date}  | Score: {self.score}" + '\n')
+    #         print(f"Description: {self.discription}" + '\n')
+    #         print(f"Genres: {self.genres}" + '\n')
+    #         print(f"pic: {self.pic}" + '\n')
+    #         if self.url != None: print(f"URL: {self.url}" + '\n')
+    #     else:
+    #         print("Книга не загружена")
 
-    def get_tuple(self):
-        if self.name != None:
-            return (self.name, self.author, self.date, self.genres, self.discription, self.pic, self.score)
-
-
-    def get_from_sql(self, id: int, file_path = "Data/DataBase.db"):
+    def get_from_sql(self, id: int, file_path = "DataBase.db"):
         db = sqlite3.connect(file_path)
         cursor = db.cursor()
 
@@ -71,16 +78,20 @@ class Book:
         
         db.close()
     
-    def byID(bd_id: int, file_path = "Data/DataBase.db"):
+    def byID(bd_id: int, file_path = "DataBase.db"):
         """
-        book by id in bd
+        вместо: 
+        book = Book()        
+        book.get_from_sql(5) 
+        пишем короче:
+        book = Book.byID(5)  
         """
         book = Book()
         book.url = None
         book.get_from_sql(bd_id, file_path)
         return book
     
-    def findReview(self, idUser: int,  file_path = "Data/DataBase.db"):
+    def findReview(self, idUser: int,  file_path = "DataBase.db"):
         db = sqlite3.connect(file_path)
         cursor = db.cursor()
 
@@ -93,16 +104,14 @@ class Book:
         else:
             return None
 
-
-    def review(self, id_user: int, user_input: int,  file_path = "Data/DataBase.db"):
+    def review(self, id_user: int, user_input: int,  file_path = "DataBase.db"):
         """
         user_input: 
-        0 - seen,
-        1 - like,
-        2 - dislike,
-        3 - saved
+        0 - просмотрено,
+        1 - лайкнуто,
+        2 - дизлайкнуто,
+        3 - сохранено
         """
-
         if user_input < 0 or user_input > 3:
             user_input = 0
 
@@ -119,8 +128,3 @@ class Book:
 
         db.commit()
         db.close()
-
-
-
-
- 
