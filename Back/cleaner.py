@@ -13,7 +13,7 @@ from nltk.corpus import stopwords
 
 def tclean(text):
     russian_stopwords = []
-    file = open("stop-ru.txt", "r")
+    file = open("Back/stop-ru.txt", "r")
 
     for i in file:
         russian_stopwords.append(i[:-1])
@@ -34,6 +34,32 @@ def tclean(text):
 
     lemmas = [morph.parse(t)[0].normal_form for t in tokens]
 
-    return lemmas
+    return " ".join(lemmas)
+
+class textCleaner():
+
+    def __init__(self):
+        self.russian_stopwords = []
+
+        file = open("Back/stop-ru.txt", "r")
+
+        for i in file:
+            self.russian_stopwords.append(i[:-1])
+
+        self.morph = pymorphy2.MorphAnalyzer()
+        
+        self.translator = str.maketrans('', '', string.punctuation + '0123456789')
+    
+    def cleaned(self, text):
+        text = text.lower()
+
+        text_cleaned = text.translate(self.translator)
+
+        tokens = [token.text for token in tokenize(text_cleaned)]
+
+        tokens = [t for t in tokens if t not in self.russian_stopwords]
 
 
+        lemmas = [self.morph.parse(t)[0].normal_form for t in tokens]
+
+        return " ".join(lemmas)

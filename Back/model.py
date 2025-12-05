@@ -1,7 +1,7 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import os
-from cleaner import tclean
+from .cleaner import tclean
 
 class LLM:
 
@@ -19,8 +19,8 @@ class LLM:
 
             model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
-                local_files_only=False,
-                torch_dtype=torch.bfloat16,
+                local_files_only=True,
+                dtype=torch.bfloat16,
                 device_map="auto" 
             )
             model.save_pretrained(self.local_dir)
@@ -36,15 +36,15 @@ class LLM:
 
         self.model = AutoModelForCausalLM.from_pretrained(
             self.local_dir,
-            local_files_only=False,
-            torch_dtype=torch.bfloat16,
+            local_files_only=True,
+            dtype=torch.bfloat16,
             device_map="auto"
         )
 
     def describeGenres(self, usr_prompt: str):
         
-        with open(genres_path) as f:
-            genres = f.read()
+        # with open(genres_path) as f:
+        #     genres = f.read()
 
         prompt = (
             "Ты библиотекарь и литературный эксперт. На основе списка слов напиши **только 5 жанров книги**, в точности так, как это реально существует. Ответ **должен быть одной строкой**, без скобок, авторов, пояснений, кавычек, запятых или любых других слов. укажи только жанр. Если ты закончил с жанрами, то **просто заполни пространство пробелами** Не повторяй себя, просто остановись"
@@ -60,12 +60,48 @@ class LLM:
         with torch.inference_mode():
             outputs = self.model.generate(
             **inputs,
-            max_new_tokens=20
-            )   
+            max_new_tokens=20,
+            temperature=0.4,  
+            num_beams=3
+            )
+              
 
         # generated_tokens = outputs.sequences[:, inputs["input_ids"].shape[-1]:]
         generated_tokens = outputs[:, inputs["input_ids"].shape[-1]:]
 
         answer = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
         # print("\nРезультат:\n", answer, "\n")    
-        return answer  
+        return answer
+
+    def questions(self, usr_prompt: str):
+        usr_prompt = tclean(usr_prompt)
+        prompt = f"""
+Пользователь дал краткое описание книги: "{usr_prompt}".
+Ты литературный эксперт. Составь ровно 2 уточняющих вопроса по описанию книги. Вопросы должны дополнить описание, чтобы по нему было легче найти книгу.
+
+Требования:
+- Каждая строка — один простой вопрос.
+- Не добавляй никаких пояснений, вступлений или комментариев.
+- Не используй фразы вроде "Вот вопросы" или "Вопросы должны быть".
+- Если второго вопроса не хватает, оставь строку пустой.
+-Твои рассуждления не должны попасть в вопросы
+"""
+
+        device = next(self.model.parameters()).device 
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
+
+        with torch.inference_mode():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=100,
+                temperature=0.1
+            )   
+
+        generated_tokens = outputs[:, inputs["input_ids"].shape[-1]:]
+
+        answer = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
+        
+        lines = [line.strip() for line in answer.split("\n") if line.strip()]
+        first_two_lines = lines[:3]   
+        return first_two_lines[1] + '\n' +first_two_lines[2]
+    
