@@ -6,6 +6,7 @@ from Front.keyboards.main_menu import main_menu
 from Back.ml_object import ml
 from Data.book_for_tgBot import Book
 from Back.ml import get_list_reviews, add_user_to_db
+import asyncio
 
 MAX_SHORT = 500
 MAX_FULL = 700
@@ -31,7 +32,8 @@ def init_user(user_id):
         "source": None,
         "current_index_in_list": None,
         "is_full": False,
-        "recommendations": []#ml.recommendations(user_id)
+        "recommendations": [],#ml.recommendations(user_id)
+        "text": " "
     }
 
 # --- КЛАВИАТУРЫ ---
@@ -121,15 +123,32 @@ def search_menu() -> InlineKeyboardMarkup:
     ])
 
 
-
-# --- ПОИСК ПО ОПИСАНИЮ ---
-async def llm_send_book(message: types.Message, user_id: int, edit=False):
+# --- ОБРАБОТКА ВВОДА LLM --- 
+async def llm_send_book(message: types.Message, user_id: int):
     """
-    Отправка книги, найденной по описанию через ml.GenreCossim.
-    Сохраняет список ID книг в recommendations.
+    Этап 1: пользователь вводит описание книги.
+    LLM генерирует уточняющий вопрос.
     """
     text = message.text.strip()
-    books = ml.GenreCossim(text)  # возвращает список ID книг
+    user_feedback[user_id]["text"] = text  # сохраняем исходное описание
+    user_feedback[user_id]["source"] = "llm_reply"
+    
+    # Генерация уточняющего вопроса через LLM
+    question = await asyncio.to_thread(ml.llm.questions, text)
+    await message.answer(question)
+
+
+async def llm_reply(message: types.Message, user_id: int, edit=False):
+    """
+    Этап 2: пользователь отвечает на уточняющий вопрос.
+    Объединяем с исходным описанием и ищем книги через ML.
+    """
+    user_text = message.text.strip()
+    base_text = user_feedback[user_id]["text"]
+    full_text = base_text + " " + user_text
+
+    # Поиск по описанию через ML
+    books = await asyncio.to_thread(ml.DescCossim, full_text)
     if not books:
         await message.answer("❌ По вашему описанию ничего не найдено.")
         return
@@ -137,33 +156,21 @@ async def llm_send_book(message: types.Message, user_id: int, edit=False):
     user_feedback[user_id]["recommendations"] = books
     user_feedback[user_id]["index"] = 0  # начинаем с первой книги
 
+    # Отправляем первую книгу пользователю
     book_id = books[0]
     book = Book.byID(book_id)
     photo = book.pic
-
-    is_full = user_feedback[user_id].get("is_full", False)
-    if is_full:
-        desc = (book.discription or "")[:MAX_FULL]
-    else:
-        desc = (book.discription or "")[:MAX_SHORT]
-
-    caption = f"<b>{book.name}</b>\nАвтор: {book.author}\n\n{desc}"
+    caption = f"<b>{book.name}</b>\nАвтор: {book.author}\n\n{book.discription[:500]}"
 
     if edit:
         await message.edit_media(
             media=types.InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"),
-            reply_markup=book_keyboard(is_full=is_full),
+            reply_markup=book_keyboard()
         )
     else:
         await message.answer_photo(
-            photo=photo,
-            caption=caption,
-            parse_mode="HTML",
-            reply_markup=book_keyboard(is_full=is_full),
+            photo=photo, caption=caption, parse_mode="HTML", reply_markup=book_keyboard()
         )
-
-
-
 
 # --- CALLBACK HANDLER ДЛЯ ПОИСКА ПО ОПИСАНИЮ ---
 @router.callback_query(lambda c: c.data == "by_description")
@@ -179,7 +186,6 @@ async def by_description_handler(callback_query: types.CallbackQuery):
         "🔍 Введите описание книги, чтобы найти её:"
     )
     await callback_query.answer()
-
 
 # --- ПОДБОРКА ---
 async def send_book(message: types.Message, user_id: int, edit=False):
@@ -518,10 +524,13 @@ async def handle_text(message: types.Message):
         )
         return
 
-    # --- 5. Поиск по описанию ---
+    # --- Обработка LLM ---
     if data.get("source") == "description_search":
-        await message.answer("⏳ Запрос обрабатывается...")
         await llm_send_book(message, user_id)
+        return
+
+    if data.get("source") == "llm_reply":
+        await llm_reply(message, user_id)
         return
 
     # --- 6. Фоллбэк ---

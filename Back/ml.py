@@ -7,6 +7,7 @@ from .cleaner import tclean
 from .model import LLM
 import numpy as np
 from Back.cleaner_object import thisDirtyTextNeedsToBe
+from sklearn.preprocessing import normalize
 
 # ====== Функции для работы с БД ======
 def add_user_to_db(userId):
@@ -64,23 +65,51 @@ class ML:
         self.llm = LLM()
 
         # ====== ЭМБЕДДЕР ======
-        self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
-        try:
-            self.embeddings = np.load("Data/embeddings.npy")
-            print("Эмбеддинги загружены с диска.")
-        except FileNotFoundError:
-            print("создаём поле с текстом для embedding")
-            def prepare_text(row):
-                author = row['author'] or ""
-                genres = (row['genre'] + ", ") * 3
-                description = thisDirtyTextNeedsToBe.cleaned(row['discription']) or ""
-                return f"{row['name']} {author} {genres} {description}".lower()
-            self.df["text"] = self.df.apply(prepare_text, axis=1)
-            
-            print("Генерация эмбеддингов для всех книг...")
-            self.embeddings = self.embedder.encode(self.df["text"].tolist(), show_progress_bar=True)
-            np.save("Data/embeddings.npy", self.embeddings)
-            print("Эмбеддинги сохранены на диск.")
+        
+        # mode = "fast"
+        mode = "slow"
+
+        if mode == "fast":
+            self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
+            try:
+                self.embeddings = np.load("Data/Fastembeddings.npy")
+                print("Эмбеддинги загружены с диска.")
+            except FileNotFoundError:
+                print("создаём поле с текстом для embedding")
+                def prepare_text(row):
+                    author = row['author'] or ""
+                    genres = (row['genre'] + ", ") * 3
+                    description = thisDirtyTextNeedsToBe.cleaned(row['discription']) or ""
+                    return f"{row['name']} {author} {genres} {description}".lower()
+                self.df["text"] = self.df.apply(prepare_text, axis=1)
+                
+                print("Генерация эмбеддингов для всех книг...")
+                self.embeddings = self.embedder.encode(self.df["text"].tolist(), show_progress_bar=True)
+                self.embeddings = normalize(self.embeddings, axis=1)
+                np.save("Data/Fastembeddings.npy", self.embeddings)
+                print("Эмбеддинги сохранены на диск.")            
+
+
+        elif mode == "slow":
+            self.embedder = SentenceTransformer("all-mpnet-base-v2")
+            try:
+                self.embeddings = np.load("Data/Slowembeddings.npy")
+                print("Эмбеддинги загружены с диска.")
+            except FileNotFoundError:
+                print("создаём поле с текстом для embedding")
+                def prepare_text(row):
+                    author = row['author'] or ""
+                    genres = (row['genre'] + ", ") * 3
+                    description = thisDirtyTextNeedsToBe.cleaned(row['discription']) or ""
+                    return f"{row['name']} {author} {genres} {description}".lower()
+                self.df["text"] = self.df.apply(prepare_text, axis=1)
+                
+                print("Генерация эмбеддингов для всех книг...")
+                self.embeddings = self.embedder.encode(self.df["text"].tolist(), show_progress_bar=True)
+                self.embeddings = normalize(self.embeddings, axis=1)
+                np.save("Data/Slowembeddings.npy", self.embeddings)
+                print("Эмбеддинги сохранены на диск.")
+
 
     # ----------- COS-SIM по названию ----------
     def NameCossim(self, BookName: str):
@@ -101,7 +130,8 @@ class ML:
     def DescCossim(self, user_description: str):
         user_description = tclean(user_description)
 
-        query_vec = self.embedder.encode([user_description])
+        query_vec = self.embedder.encode([user_description], convert_to_numpy=True)
+        query_vec = normalize(query_vec, axis=1)
 
         sims = cosine_similarity(query_vec, self.embeddings).flatten()
 
