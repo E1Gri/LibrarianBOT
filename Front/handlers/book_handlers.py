@@ -8,7 +8,7 @@ from Data.book_for_tgBot import Book
 from Back.ml import get_list_reviews, add_user_to_db
 
 MAX_SHORT = 500
-MAX_FULL = 900
+MAX_FULL = 700
 
 
 router = Router()
@@ -529,23 +529,19 @@ async def handle_text(message: types.Message):
 
     if last_menu == "search":
         kb = search_menu()
-        text_hint = "Пожалуйста, введите часть названия или используйте кнопки ниже."
+        text_hint = "Пожалуйста, введите часть названия книги или используйте кнопки ниже."
     elif last_menu == "ratings_category":
         kb = ratings_menu_category()
         text_hint = "Пожалуйста, введите номер книги из списка или используйте кнопки ниже."
     elif last_menu == "ratings_all":
         kb = ratings_menu_all()
-        text_hint = "Пожалуйста, выберите категорию оценок с помощью кнопок."
+        text_hint = "Пожалуйста, выберите категорию оценок с помощью кнопок ниже."
     else:
+        # сюда попадёт и ситуация после /start, когда пользователь просто пишет текст
         kb = main_menu()
-        text_hint = "Пожалуйста, используйте кнопки меню ниже."
+        text_hint = "Пожалуйста, выберите действие из меню ниже."
 
     await message.answer(text_hint, reply_markup=kb)
-
-
-
-
-
 
 @router.callback_query(lambda c: c.data == "toggle_description")
 async def toggle_description_handler(callback_query: types.CallbackQuery):
