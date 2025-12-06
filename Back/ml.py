@@ -4,6 +4,7 @@ import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 from .cleaner import tclean
+from Data.DataBaseCleaner import dbCleaner
 from .model import LLM
 import numpy as np
 from Back.cleaner_object import thisDirtyTextNeedsToBe
@@ -57,6 +58,7 @@ class ML:
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, tuples)
             db.commit()
+            dbCleaner()
 
         # загружаем dataframe
         self.df = pd.read_sql_query("SELECT * FROM books", db)
@@ -70,7 +72,7 @@ class ML:
         mode = "slow"
 
         if mode == "fast":
-            self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
+            self.embedder = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
             try:
                 self.embeddings = np.load("Data/Fastembeddings.npy")
                 print("Эмбеддинги загружены с диска.")
@@ -79,7 +81,7 @@ class ML:
                 def prepare_text(row):
                     author = row['author'] or ""
                     genres = (row['genre'] + ", ") * 3
-                    description = thisDirtyTextNeedsToBe.cleaned(row['discription']) or ""
+                    description = row['discription'] or ""
                     return f"{row['name']} {author} {genres} {description}".lower()
                 self.df["text"] = self.df.apply(prepare_text, axis=1)
                 
@@ -91,7 +93,7 @@ class ML:
 
 
         elif mode == "slow":
-            self.embedder = SentenceTransformer("all-mpnet-base-v2")
+            self.embedder = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
             try:
                 self.embeddings = np.load("Data/Slowembeddings.npy")
                 print("Эмбеддинги загружены с диска.")
@@ -100,7 +102,7 @@ class ML:
                 def prepare_text(row):
                     author = row['author'] or ""
                     genres = (row['genre'] + ", ") * 3
-                    description = thisDirtyTextNeedsToBe.cleaned(row['discription']) or ""
+                    description = row['discription'] or ""
                     return f"{row['name']} {author} {genres} {description}".lower()
                 self.df["text"] = self.df.apply(prepare_text, axis=1)
                 
@@ -127,8 +129,9 @@ class ML:
 
         return self.df.iloc[top_idx]["id"].tolist()
 
+    # ----------- COS-SIM по описанию ----------
     def DescCossim(self, user_description: str):
-        user_description = tclean(user_description)
+        # user_description = tclean(user_description)
 
         query_vec = self.embedder.encode([user_description], convert_to_numpy=True)
         query_vec = normalize(query_vec, axis=1)

@@ -59,7 +59,7 @@ class Book:
     #     else:
     #         print("Книга не загружена")
 
-    def get_from_sql(self, id: int, file_path = "DataBase.db"):
+    def get_from_sql(self, id: int, file_path = "Data/DataBase.db"):
         db = sqlite3.connect(file_path)
         cursor = db.cursor()
 
@@ -78,7 +78,7 @@ class Book:
         
         db.close()
     
-    def byID(bd_id: int, file_path = "DataBase.db"):
+    def byID(bd_id: int, file_path = "Data/DataBase.db"):
         """
         вместо: 
         book = Book()        
@@ -91,7 +91,7 @@ class Book:
         book.get_from_sql(bd_id, file_path)
         return book
     
-    def findReview(self, idUser: int,  file_path = "DataBase.db"):
+    def findReview(self, idUser: int,  file_path = "Data/DataBase.db"):
         db = sqlite3.connect(file_path)
         cursor = db.cursor()
 
@@ -104,7 +104,7 @@ class Book:
         else:
             return None
 
-    def review(self, id_user: int, user_input: int,  file_path = "DataBase.db"):
+    def review(self, id_user: int, user_input: int,  file_path = "Data/DataBase.db"):
         """
         user_input: 
         0 - просмотрено,

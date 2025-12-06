@@ -130,7 +130,7 @@ async def llm_send_book(message: types.Message, user_id: int):
     LLM генерирует уточняющий вопрос.
     """
     text = message.text.strip()
-    user_feedback[user_id]["text"] = text  # сохраняем исходное описание
+    user_feedback[user_id]["text"] = text  
     user_feedback[user_id]["source"] = "llm_reply"
     
     # Генерация уточняющего вопроса через LLM
@@ -160,7 +160,7 @@ async def llm_reply(message: types.Message, user_id: int, edit=False):
     book_id = books[0]
     book = Book.byID(book_id)
     photo = book.pic
-    caption = f"<b>{book.name}</b>\nАвтор: {book.author}\n\n{book.discription[:500]}"
+    caption = f"{book.discription[:500]}\n\n<b>{book.name}</b>\nАвтор: {book.author}"
 
     if edit:
         await message.edit_media(
@@ -405,7 +405,8 @@ async def handle_text(message: types.Message):
     text = message.text.strip()
 
     # --- 1. Если уже открыта карточка (из поиска или рейтингов) ---
-    if data.get("current_index_in_list") is not None:
+    
+    if data.get("current_index_in_list") is not None and (data.get("source") != "description_search" and data.get("source") != "llm_reply") :
         source = data.get("source")
 
         if source == "search":
@@ -417,10 +418,12 @@ async def handle_text(message: types.Message):
             books_list = []
 
         idx = data.get("current_index_in_list", 0)
-        if not books_list or idx < 0 or idx >= len(books_list):
+        if (not books_list or idx < 0 or idx >= len(books_list)):
             await message.answer(
-                "Сейчас открыта карточка книги.\n"
-                "Пожалуйста, используйте кнопки под карточкой.",
+                f"""Сейчас открыта карточка книги.\n
+                    Пожалуйста, используйте кнопки под карточкой.
+                \n{idx}, {source}, {len(books_list)}
+                """,
                 reply_markup=main_menu(),
             )
             return
