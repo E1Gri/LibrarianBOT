@@ -19,7 +19,11 @@ class LLM:
 
             model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
+<<<<<<< HEAD
                 local_files_only=False,
+=======
+                local_files_only=True,
+>>>>>>> arishkawww-frontpatch-1
                 dtype=torch.bfloat16,
                 device_map="auto" 
             )
@@ -36,7 +40,11 @@ class LLM:
 
         self.model = AutoModelForCausalLM.from_pretrained(
             self.local_dir,
+<<<<<<< HEAD
             local_files_only=False,
+=======
+            local_files_only=True,
+>>>>>>> arishkawww-frontpatch-1
             dtype=torch.bfloat16,
             device_map="auto"
         )
@@ -60,12 +68,64 @@ class LLM:
         with torch.inference_mode():
             outputs = self.model.generate(
             **inputs,
+<<<<<<< HEAD
             max_new_tokens=20
             )   
+=======
+            max_new_tokens=20,
+            temperature=0.4,  
+            num_beams=3
+            )
+              
+>>>>>>> arishkawww-frontpatch-1
 
         # generated_tokens = outputs.sequences[:, inputs["input_ids"].shape[-1]:]
         generated_tokens = outputs[:, inputs["input_ids"].shape[-1]:]
 
         answer = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
         # print("\nРезультат:\n", answer, "\n")    
+<<<<<<< HEAD
         return answer  
+=======
+        return answer
+
+    def questions(self, usr_prompt: str):
+        # usr_prompt = tclean(usr_prompt)
+        prompt = f"""
+Пользователь дал краткое описание книги: "{usr_prompt}".
+
+Задача:
+Составь ровно 2 уточняющих вопроса, которые помогут точнее определить книгу.
+
+Строгий формат ответа:
+1) Ответ должен содержать ровно две строки.
+2) На каждой строке — один простой вопрос.
+3) Не добавляй ничего, кроме самих вопросов.
+4) Запрещено писать списки, тире, нумерацию, пояснения, условия, рассуждения, инструкции.
+5) Запрещено переформулировать правила, пересказывать требования или добавлять комментарии.
+6) Вопросы не должны быть об авторе или дате публикации.
+
+Если второго вопроса не хватает — оставь вторую строку пустой.
+
+Выведи только две строки.
+"""
+
+        device = next(self.model.parameters()).device 
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
+
+        with torch.inference_mode():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=100,
+                temperature=0.7
+            )   
+
+        generated_tokens = outputs[:, inputs["input_ids"].shape[-1]:]
+
+        answer = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
+        
+        lines = [line.strip() for line in answer.split("\n") if line.strip()]
+        first_two_lines = lines[:3]   
+        return first_two_lines[0] + '\n\n' +first_two_lines[1]
+    
+>>>>>>> arishkawww-frontpatch-1

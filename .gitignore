@@ -4,8 +4,7 @@ venv/
 Data/DataBase.db
 covers/
 
-__pycache__/
-Data/__pycache__/
+*__pycache__/
 *.pyc
 
 *.bin
@@ -14,3 +13,11 @@ Data/__pycache__/
 
 .DS_Store
 *.log
+
+*.npy
+
+*gi.DS_Store
+
+*.env
+
+*.csv
