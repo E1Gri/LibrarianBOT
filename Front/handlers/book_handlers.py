@@ -130,6 +130,7 @@ async def llm_send_book(message: types.Message, user_id: int):
     LLM генерирует уточняющий вопрос.
     """
     text = message.text.strip()
+    print(text)
     user_feedback[user_id]["text"] = text  
     user_feedback[user_id]["source"] = "llm_reply"
     
@@ -406,7 +407,7 @@ async def handle_text(message: types.Message):
 
     # --- 1. Если уже открыта карточка (из поиска или рейтингов) ---
     
-    if data.get("current_index_in_list") is not None and (data.get("source") != "description_search" and data.get("source") != "llm_reply") :
+    if data.get("current_index_in_list") is not None and (data.get("source") != "description_search" and data.get("source") != "llm_reply"):
         source = data.get("source")
 
         if source == "search":

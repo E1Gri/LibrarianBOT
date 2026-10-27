@@ -15,3 +15,7 @@ covers/
 *.log
 
 *.npy
+
+.DS_Store
+
+*.env
